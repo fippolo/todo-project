@@ -36,11 +36,11 @@ jobs:
       - name: Build
         run: npm run build -- --base-href "/todo-project/"
       - name: Disable Jekyll
-        run: echo > dist/todo-app/.nojekyll
+        run: echo > dist/todo-app/browser/.nojekyll
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: todo-app/dist/todo-app
+          path: todo-app/dist/todo-app/browser
 
   deploy:
     needs: build
