@@ -34,7 +34,7 @@ jobs:
       - name: Install deps
         run: npm ci
       - name: Build
-        run: npm run build -- --base-href "/${{ github.event.repository.name }}/"
+        run: npm run build -- --base-href "/todo-project/"
       - name: Disable Jekyll
         run: echo > dist/todo-app/.nojekyll
       - name: Upload artifact
