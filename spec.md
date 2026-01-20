@@ -1,26 +1,37 @@
-# ToDo list management system
-this project aim to make a simple yet effective way to mange a personal todo list
-## technologies
+# Todo list management system
+This project aims to make a simple yet effective way to manage a personal todo list.
+## Technologies
 - Node.js
 - Angular
-- Typescript
-- Angular material
+- TypeScript
+- Angular Material
+- Angular CDK (Drag and Drop)
 
 ## Data
-the system must be able to store a todo list where every task has a title a short description (optional) a priority number (the lower the more important, tasks can have the same priority) a estimated time to complete (optional), a task could either be in 3 states, uncompleted, failed, completed
+The system stores a todo list where every task has:
+- A title
+- A short description (optional)
+- A priority number (lower is more important, priorities are unique)
+- An estimated time to complete in minutes (optional)
+- A status of uncompleted, failed, or completed
+- An optional rest-time flag
 
 ## Functional requirements
 - the user must be able to add a task
 - the user must be able to remove a task
 - the user must be able to edit a task
+- the user must be able to reorder tasks via drag and drop, which updates priority
+- the user must be able to set the first task start time to minute precision
+- the user must be able to sync the start time to the current time
 
 ## UI requirements
-- the ui must be made using angular materials
-- the ui must show the 3 states of a task by stricking it if it failed, check it if it is completed
-- must have a button to the right to add task
-- must have a bar representing 24 hour where every task is shown in order of priority (if the same then alphabetical)
-    - an indicator shows the current time of day
-    - an indicator can be used to select when the first task start
+- the ui must be made using Angular Material components
+- the ui must show the 3 states of a task by striking it if it failed, and showing a check icon if it is completed
+- the ui must show tasks sorted by priority, with no duplicate priorities
+- must have a bar representing 24 hours where every task is shown in order of priority
+  - an indicator shows the current time of day
+  - an indicator can be used to select when the first task starts (minute precision)
+  - a button can sync the start time to now
 
 ## non functional requirements
 - all the data must be stored in the browser if possible
