@@ -25,19 +25,23 @@ export interface TodoDraft {
 const DEFAULT_WORK_MINUTES = 60;
 const DEFAULT_REST_MINUTES = 15;
 const MIN_PRIORITY = 1;
-const START_HOUR_FALLBACK = 8;
+const getNowMinutes = () => {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+};
 
 @Injectable({ providedIn: 'root' })
 export class TodoStore {
   private readonly tasksKey = 'todo.tasks.v1';
+  private readonly startMinutesKey = 'todo.start-minutes.v1';
   private readonly startHourKey = 'todo.start-hour.v1';
   private readonly storage = typeof window === 'undefined' ? null : window.localStorage;
 
   private readonly _tasks = signal<TodoTask[]>([]);
-  private readonly _startHour = signal<number>(START_HOUR_FALLBACK);
+  private readonly _startMinutes = signal<number>(getNowMinutes());
 
   readonly tasks = this._tasks.asReadonly();
-  readonly startHour = this._startHour.asReadonly();
+  readonly startMinutes = this._startMinutes.asReadonly();
 
   readonly sortedTasks = computed(() => {
     return [...this._tasks()].sort((first, second) => {
@@ -64,23 +68,27 @@ export class TodoStore {
 
   addTask(draft: TodoDraft) {
     const title = draft.title.trim() || (draft.isRest ? 'Rest time' : 'Untitled task');
+    const priority = this.normalizePriority(draft.priority);
     const task: TodoTask = {
       id: this.makeId(),
       title,
       description: draft.description?.trim() || undefined,
-      priority: this.normalizePriority(draft.priority),
+      priority,
       estimateMinutes: this.normalizeMinutes(draft.estimateMinutes, draft.isRest),
       status: draft.status,
       isRest: draft.isRest,
       createdAt: Date.now()
     };
 
-    this._tasks.update((tasks) => [...tasks, task]);
+    this._tasks.update((tasks) => {
+      const updated = this.shiftForInsert(tasks, priority);
+      return [...updated, task];
+    });
   }
 
   updateTask(id: string, patch: Partial<TodoDraft>) {
     this._tasks.update((tasks) =>
-      tasks.map((task) => {
+      this.shiftForUpdate(tasks, id, patch).map((task) => {
         if (task.id !== id) {
           return task;
         }
@@ -100,15 +108,14 @@ export class TodoStore {
           patch.estimateMinutes !== undefined
             ? this.normalizeMinutes(patch.estimateMinutes, isRest)
             : task.estimateMinutes;
+        const priority =
+          patch.priority !== undefined ? this.normalizePriority(patch.priority) : task.priority;
 
         return {
           ...task,
           title,
           description,
-          priority:
-            patch.priority !== undefined
-              ? this.normalizePriority(patch.priority)
-              : task.priority,
+          priority,
           estimateMinutes,
           status: patch.status ?? task.status,
           isRest
@@ -121,9 +128,30 @@ export class TodoStore {
     this._tasks.update((tasks) => tasks.filter((task) => task.id !== id));
   }
 
-  setStartHour(hour: number) {
-    const clamped = Math.min(23, Math.max(0, Math.round(hour)));
-    this._startHour.set(clamped);
+  reorderTasks(order: string[]) {
+    this._tasks.update((tasks) => {
+      if (order.length !== tasks.length) {
+        return tasks;
+      }
+      const byId = new Map(tasks.map((task) => [task.id, { ...task }]));
+      if (byId.size !== tasks.length) {
+        return tasks;
+      }
+
+      order.forEach((id, index) => {
+        const task = byId.get(id);
+        if (task) {
+          task.priority = index + 1;
+        }
+      });
+
+      return Array.from(byId.values());
+    });
+  }
+
+  setStartMinutes(minutes: number) {
+    const clamped = Math.min(24 * 60 - 1, Math.max(0, Math.round(minutes)));
+    this._startMinutes.set(clamped);
   }
 
   getTaskMinutes(task: TodoTask) {
@@ -143,12 +171,23 @@ export class TodoStore {
       const normalized = storedTasks
         .map((task) => this.normalizeTask(task))
         .filter((task): task is TodoTask => task !== null);
-      this._tasks.set(normalized);
+      this._tasks.set(this.normalizePrioritiesIfNeeded(normalized));
     }
 
-    const storedStart = this.readJson<number>(this.startHourKey, START_HOUR_FALLBACK);
-    if (Number.isFinite(storedStart)) {
-      this._startHour.set(Math.min(23, Math.max(0, Math.round(storedStart))));
+    const storedStartMinutes = this.readJson<number | null>(this.startMinutesKey, null);
+    if (typeof storedStartMinutes === 'number' && Number.isFinite(storedStartMinutes)) {
+      this._startMinutes.set(
+        Math.min(24 * 60 - 1, Math.max(0, Math.round(storedStartMinutes)))
+      );
+    } else {
+      const storedStartHour = this.readJson<number | null>(this.startHourKey, null);
+      if (typeof storedStartHour === 'number' && Number.isFinite(storedStartHour)) {
+        this._startMinutes.set(
+          Math.min(23, Math.max(0, Math.round(storedStartHour))) * 60
+        );
+      } else {
+        this._startMinutes.set(getNowMinutes());
+      }
     }
   }
 
@@ -162,7 +201,7 @@ export class TodoStore {
     });
 
     effect(() => {
-      this.storage?.setItem(this.startHourKey, JSON.stringify(this._startHour()));
+      this.storage?.setItem(this.startMinutesKey, JSON.stringify(this._startMinutes()));
     });
   }
 
@@ -210,6 +249,82 @@ export class TodoStore {
     return Math.round(parsed);
   }
 
+  private shiftForInsert(tasks: TodoTask[], priority: number) {
+    const updated = tasks.map((task) => ({ ...task }));
+    updated.forEach((task) => {
+      if (task.priority >= priority) {
+        task.priority += 1;
+      }
+    });
+    return updated;
+  }
+
+  private shiftForUpdate(tasks: TodoTask[], id: string, patch: Partial<TodoDraft>) {
+    const target = tasks.find((task) => task.id === id);
+    if (!target || patch.priority === undefined) {
+      return tasks.map((task) => ({ ...task }));
+    }
+
+    const updated = tasks.map((task) => ({ ...task }));
+    const newPriority = this.normalizePriority(patch.priority);
+    const oldPriority = target.priority;
+    if (newPriority === oldPriority) {
+      return updated;
+    }
+
+    if (newPriority > oldPriority) {
+      updated.forEach((task) => {
+        if (task.id === id) {
+          return;
+        }
+        if (task.priority > oldPriority && task.priority <= newPriority) {
+          task.priority -= 1;
+        }
+      });
+      return updated;
+    }
+
+    updated.forEach((task) => {
+      if (task.id === id) {
+        return;
+      }
+      if (task.priority >= newPriority && task.priority < oldPriority) {
+        task.priority += 1;
+      }
+    });
+    return updated;
+  }
+
+  private normalizePrioritiesIfNeeded(tasks: TodoTask[]) {
+    const priorities = tasks.map((task) => task.priority);
+    const hasDuplicates = new Set(priorities).size !== priorities.length;
+    if (!hasDuplicates) {
+      return tasks;
+    }
+
+    const ordered = [...tasks].sort((first, second) => {
+      const priorityDelta = first.priority - second.priority;
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      const titleDelta = first.title.localeCompare(second.title);
+      if (titleDelta !== 0) {
+        return titleDelta;
+      }
+      return first.createdAt - second.createdAt;
+    });
+
+    const byId = new Map(tasks.map((task) => [task.id, { ...task }]));
+    ordered.forEach((task, index) => {
+      const stored = byId.get(task.id);
+      if (stored) {
+        stored.priority = index + 1;
+      }
+    });
+
+    return Array.from(byId.values());
+  }
+
   private readJson<T>(key: string, fallback: T): T {
     try {
       const raw = this.storage?.getItem(key);
@@ -227,5 +342,9 @@ export class TodoStore {
       return crypto.randomUUID();
     }
     return `task_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private getNowMinutes() {
+    return getNowMinutes();
   }
 }

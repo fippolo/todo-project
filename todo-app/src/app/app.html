@@ -3,11 +3,6 @@
     <span class="app-title">Dayline</span>
     <span class="app-subtitle">Priority-first 24-hour flow</span>
   </div>
-  <span class="spacer"></span>
-  <button mat-flat-button color="primary" class="add-button" (click)="startNewTask()">
-    <mat-icon>add</mat-icon>
-    Add task
-  </button>
 </mat-toolbar>
 
 <main class="shell">
@@ -19,14 +14,14 @@
       </div>
       <div class="start-control">
         <span class="label">First task starts</span>
-        <span class="value">{{ formatHour(startHour()) }}</span>
+        <span class="value">{{ formatTime(startMinutes()) }}</span>
       </div>
     </div>
 
     <div class="timeline-bar">
       <div
         class="timeline-indicator start"
-        [style.left.%]="(startHour() * 60 / 1440) * 100"
+        [style.left.%]="(startMinutes() / 1440) * 100"
       >
         <span>Start</span>
       </div>
@@ -59,9 +54,16 @@
         <span>24:00</span>
       </div>
       <div class="start-slider">
-        <mat-slider min="0" max="23" step="1" discrete>
-          <input matSliderThumb [value]="startHour()" (valueChange)="setStartHour($event)" />
+        <mat-slider min="0" max="1439" step="1" [displayWith]="formatTime" discrete>
+          <input
+            matSliderThumb
+            [value]="startMinutes()"
+            (valueChange)="setStartMinutes($event)"
+          />
         </mat-slider>
+        <button mat-stroked-button type="button" class="sync-button" (click)="syncStartToNow()">
+          Sync to now
+        </button>
       </div>
       @if (overbooked()) {
         <div class="overbooked">
@@ -86,9 +88,9 @@
           <p>Add a task to see it appear on the 24-hour bar.</p>
         </mat-card>
       } @else {
-        <div class="task-list">
+        <div class="task-list" cdkDropList (cdkDropListDropped)="dropTask($event)">
           @for (task of sortedTasks(); track task.id; let i = $index) {
-            <mat-card class="task-card" [style.--delay]="(i * 80) + 'ms'">
+            <mat-card class="task-card" cdkDrag [style.--delay]="(i * 80) + 'ms'">
               <div class="task-top">
                 <div class="task-title" [class.failed-text]="task.status === 'failed'">
                   @if (task.status === 'completed') {
@@ -100,6 +102,14 @@
                   <span>{{ task.title }}</span>
                 </div>
                 <div class="task-actions">
+                  <button
+                    mat-icon-button
+                    class="drag-handle"
+                    cdkDragHandle
+                    aria-label="Reorder task"
+                  >
+                    <mat-icon>drag_indicator</mat-icon>
+                  </button>
                   <button mat-icon-button (click)="editTask(task)" aria-label="Edit task">
                     <mat-icon>edit</mat-icon>
                   </button>

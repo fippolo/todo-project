@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
@@ -34,6 +35,7 @@ interface TimelineSegment {
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    DragDropModule,
     MatButtonModule,
     MatButtonToggleModule,
     MatCardModule,
@@ -57,13 +59,14 @@ export class App {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly sortedTasks = this.store.sortedTasks;
-  readonly startHour = this.store.startHour;
+  readonly startMinutes = this.store.startMinutes;
   readonly totalMinutes = this.store.totalMinutes;
   readonly nowMinutes = signal(this.getNowMinutes());
   readonly editingId = signal<string | null>(null);
+  readonly nextPriority = computed(() => this.getNextPriority());
 
   readonly timelineSegments = computed(() =>
-    this.buildTimelineSegments(this.sortedTasks(), this.startHour())
+    this.buildTimelineSegments(this.sortedTasks(), this.startMinutes())
   );
   readonly overbooked = computed(() => this.totalMinutes() > 24 * 60);
 
@@ -79,6 +82,7 @@ export class App {
   constructor() {
     const timer = setInterval(() => this.nowMinutes.set(this.getNowMinutes()), 60000);
     this.destroyRef.onDestroy(() => clearInterval(timer));
+    this.startNewTask();
   }
 
   startNewTask() {
@@ -86,7 +90,7 @@ export class App {
     this.form.reset({
       title: '',
       description: '',
-      priority: 1,
+      priority: this.nextPriority(),
       estimateMinutes: 60,
       status: 'uncompleted',
       isRest: false
@@ -154,8 +158,20 @@ export class App {
     }
   }
 
-  setStartHour(hour: number) {
-    this.store.setStartHour(hour);
+  dropTask(event: CdkDragDrop<TodoTask[]>) {
+    const ordered = [...this.sortedTasks()];
+    moveItemInArray(ordered, event.previousIndex, event.currentIndex);
+    this.store.reorderTasks(ordered.map((task) => task.id));
+  }
+
+  setStartMinutes(minutes: number) {
+    this.store.setStartMinutes(minutes);
+  }
+
+  syncStartToNow() {
+    const now = this.getNowMinutes();
+    this.nowMinutes.set(now);
+    this.setStartMinutes(now);
   }
 
   formatDuration(minutes?: number) {
@@ -173,17 +189,17 @@ export class App {
     return `${mins}m`;
   }
 
-  formatHour(hour: number) {
-    const clamped = Math.min(23, Math.max(0, hour));
-    const hours = Math.floor(clamped);
-    const minutes = Math.round((clamped - hours) * 60);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  formatTime(minutes: number) {
+    const clamped = Math.min(24 * 60 - 1, Math.max(0, Math.round(minutes)));
+    const hours = Math.floor(clamped / 60);
+    const mins = clamped % 60;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   }
 
-  private buildTimelineSegments(tasks: TodoTask[], startHour: number): TimelineSegment[] {
+  private buildTimelineSegments(tasks: TodoTask[], startMinutes: number): TimelineSegment[] {
     const dayMinutes = 24 * 60;
     const segments: TimelineSegment[] = [];
-    let cursor = startHour * 60;
+    let cursor = startMinutes;
 
     tasks.forEach((task, index) => {
       const duration = this.store.getTaskMinutes(task);
@@ -216,5 +232,14 @@ export class App {
   private getNowMinutes() {
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
+  }
+
+  private getNextPriority() {
+    const tasks = this.store.tasks();
+    if (tasks.length === 0) {
+      return 1;
+    }
+    const lowest = tasks.reduce((current, task) => Math.max(current, task.priority), tasks[0].priority);
+    return Math.max(1, lowest + 1);
   }
 }
