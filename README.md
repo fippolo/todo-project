@@ -12,4 +12,4 @@ I initially started this project to have a way to plan my daily workflow, then I
 ## GitHub Actions and Pages
 This repository includes a GitHub Actions workflow that builds the Angular app and publishes the built `dist` output to GitHub Pages.
 
-deployied to: fippolo.github.io/todo-project/
+deployied to: [fippolo.github.io/todo-project/](https://fippolo.github.io/todo-project/)
